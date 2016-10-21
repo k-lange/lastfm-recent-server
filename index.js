@@ -1,10 +1,11 @@
 require('dotenv').config();
 const { get } = require('axios');
-const { last, sortBy, differenceBy, compact, flow, map } = require('lodash/fp');
+const { last, sortBy, differenceBy, flow, map, partition, isEqual } = require('lodash/fp');
 const socket = require('socket.io')(process.env.PORT);
 
 const URL = `http://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${process.env.LM_USER}&api_key=${process.env.LM_KEY}&format=json`;
 let recentTracks = [];
+let nowPlaying;
 
 fetchTracks();
 setInterval(fetchTracks, 10000);
@@ -24,33 +25,41 @@ function getTracksFromResponse({ data }) {
 }
 
 function convertTracks(tracks) {
-    return flow(
+    const [ currentTracks, currentPlaying ] = flow(
         map(convertTrack),
-        compact,
-        sortBy('date')
+        sortBy('date'),
+        partition('date')
     )(tracks);
+
+    return { currentTracks, currentPlaying };
 }
 
 function convertTrack(track) {
-    if (!track.date) { return; }
-
     return {
         artist: track.artist['#text'],
         title: track.name,
         album: track.album['#text'],
         cover: last(track.image)['#text'],
-        date: parseInt(track.date.uts) * 1000
+        date: track.date && parseInt(track.date.uts) * 1000
     };
 }
 
-function saveAndEmit(tracks) {
-    const newTracks = differenceBy(track => track.date)(tracks, recentTracks);
+function saveAndEmit({ currentTracks, currentPlaying }) {
+    const newTracks = differenceBy(track => track.date)(currentTracks, recentTracks);
+
     if (newTracks.length) {
         socket.emit('tracks', newTracks);
     }
-    recentTracks = tracks;
+
+    if (!isEqual(currentPlaying, nowPlaying)) {
+        socket.emit('now', currentPlaying);
+    }
+
+    recentTracks = currentTracks;
+    nowPlaying = currentPlaying;
 }
 
 function onConnect(clientSocket) {
     clientSocket.emit('tracks', recentTracks);
+    clientSocket.emit('now', nowPlaying);
 }
