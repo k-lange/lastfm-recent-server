@@ -25,7 +25,7 @@ function getTracksFromResponse({ data }) {
 }
 
 function convertTracks(tracks) {
-    const [ currentTracks, currentPlaying ] = flow(
+    const [ currentTracks, [ currentPlaying ] ] = flow(
         map(convertTrack),
         sortBy('date'),
         partition('date')
