@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { get } = require('axios');
-const { last, sortBy, differenceBy, compact } = require('lodash');
+const { last, sortBy, differenceBy, compact, flow, map } = require('lodash/fp');
 const socket = require('socket.io')(process.env.PORT);
 
 const URL = `http://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${process.env.LM_USER}&api_key=${process.env.LM_KEY}&format=json`;
@@ -15,7 +15,6 @@ function fetchTracks() {
     get(URL)
         .then(getTracksFromResponse)
         .then(convertTracks)
-        .then(sort)
         .then(saveAndEmit)
         .catch(error => console.error(error));
 }
@@ -25,11 +24,16 @@ function getTracksFromResponse({ data }) {
 }
 
 function convertTracks(tracks) {
-    return compact(tracks.map(convertTrack));
+    return flow(
+        map(convertTrack),
+        compact,
+        sortBy('date')
+    )(tracks);
 }
 
 function convertTrack(track) {
     if (!track.date) { return; }
+
     return {
         artist: track.artist['#text'],
         title: track.name,
@@ -39,12 +43,8 @@ function convertTrack(track) {
     };
 }
 
-function sort(tracks) {
-    return sortBy(tracks, 'date');
-}
-
 function saveAndEmit(tracks) {
-    const newTracks = differenceBy(tracks, recentTracks, track => track.date);
+    const newTracks = differenceBy(track => track.date)(tracks, recentTracks);
     if (newTracks.length) {
         socket.emit('tracks', newTracks);
     }
