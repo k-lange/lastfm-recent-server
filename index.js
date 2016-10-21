@@ -1,4 +1,5 @@
 require('dotenv').config();
+const fs = require('fs');
 const { get } = require('axios');
 const { env } = process;
 const { last, sortBy, differenceBy, flow, map, partition, isEqual } = require('lodash/fp');
