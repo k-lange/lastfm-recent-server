@@ -1,9 +1,11 @@
 require('dotenv').config();
 const { get } = require('axios');
+const { env } = process;
 const { last, sortBy, differenceBy, flow, map, partition, isEqual } = require('lodash/fp');
-const socket = require('socket.io')(process.env.PORT);
 
-const URL = `http://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${process.env.LM_USER}&api_key=${process.env.LM_KEY}&format=json`;
+const socket = require('socket.io')(createServer().listen(env.PORT));
+
+const URL = `http://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${env.LM_USER}&api_key=${env.LM_KEY}&format=json`;
 let recentTracks = [];
 let nowPlaying;
 
@@ -11,6 +13,19 @@ fetchTracks();
 setInterval(fetchTracks, 10000);
 
 socket.on('connection', onConnect);
+
+function createServer() {
+    if (env.CERT && env.CERT_KEY) {
+        const httpsOpts = {
+            key: env.CERT_KEY && fs.readFileSync(env.CERT_KEY),
+            cert: env.CERT && fs.readFileSync(env.CERT)
+        };
+        return require('https').createServer(httpsOpts);
+    } else {
+        return require('http').createServer();
+    }
+
+}
 
 function fetchTracks() {
     get(URL)
