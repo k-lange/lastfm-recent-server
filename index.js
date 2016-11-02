@@ -2,11 +2,13 @@ require('dotenv').config();
 const fs = require('fs');
 const { get } = require('axios');
 const { env } = process;
-const { last, sortBy, differenceBy, flow, map, partition, isEqual } = require('lodash/fp');
+const { last, sortBy, differenceBy, flow, map, partition, isEqual, memoize } = require('lodash/fp');
 
 const socket = require('socket.io')(createServer().listen(env.PORT));
+const memoizedGetArtistImage = memoize(getArtistImage);
 
 const URL = `http://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${env.LM_USER}&api_key=${env.LM_KEY}&format=json`;
+
 let recentTracks = [];
 let nowPlaying;
 
@@ -41,23 +43,41 @@ function getTracksFromResponse({ data }) {
 }
 
 function convertTracks(tracks) {
-    const [ currentTracks, [ currentPlaying ] ] = flow(
-        map(convertTrack),
-        sortBy('date'),
-        partition('date')
-    )(tracks);
-
-    return { currentTracks, currentPlaying };
+    return Promise.all(map(convertTrack)(tracks))
+        .then(sortBy('data'))
+        .then(partition('date'))
+        .then(splitNowPlayingAndRecent);
 }
 
 function convertTrack(track) {
-    return {
+    return getCover(track).then(cover => ({
         artist: track.artist['#text'],
         title: track.name,
         album: track.album['#text'],
-        cover: last(track.image)['#text'],
-        date: track.date && parseInt(track.date.uts) * 1000
-    };
+        date: track.date && parseInt(track.date.uts) * 1000,
+        cover
+    }));
+}
+
+function getCover(track) {
+    return Promise.resolve(last(track.image)['#text'] || memoizedGetArtistImage(track.artist.mbid));
+}
+
+function getArtistImage(artistId) {
+    return get(getArtistUrl(artistId))
+        .then(getArtistImageFromResponse);
+}
+
+function getArtistUrl(artistId) {
+    return `http://ws.audioscrobbler.com/2.0/?method=artist.getinfo&mbid=${artistId}&api_key=${env.LM_KEY}&format=json`;
+}
+
+function getArtistImageFromResponse({ data }) {
+    return data.artist && last(data.artist.image)['#text'];
+}
+
+function splitNowPlayingAndRecent([ currentTracks, [ currentPlaying ] ]) {
+    return { currentTracks, currentPlaying };
 }
 
 function saveAndEmit({ currentTracks, currentPlaying }) {
